@@ -281,9 +281,6 @@ def test_join_custom_labels(aggregator, instance, check):
     # run check twice to have pod/node mapping
     for _ in range(2):
         check.check(instance)
-        print('HEREBRUH')
-        for i in aggregator._metrics.items():
-            print i
 
     for metric in METRICS:
         aggregator.assert_metric(metric, hostname=HOSTNAMES.get(metric, None))
