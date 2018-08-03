@@ -41,7 +41,7 @@ class KubernetesState(GenericPrometheusCheck):
                 )
                 generic_instances.append(kubernetes_state_instance)
 
-        super(KubernetesState, self).__init__(name, init_config, agentConfig, instances)
+        super(KubernetesState, self).__init__(name, init_config, agentConfig, generic_instances)
 
         self.pod_phase_to_status = {
             'Pending':   self.WARNING,
@@ -116,7 +116,7 @@ class KubernetesState(GenericPrometheusCheck):
                 'kube_daemonset_status_number_ready': 'daemonset.ready',
                 'kube_deployment_spec_paused': 'deployment.paused',
                 'kube_deployment_spec_replicas': 'deployment.replicas_desired',
-                'kube_deployment_spec_strategy_rollingupdate_max_unavailable': 'deployment.rollingupdate.max_unavailable',
+                'kube_deployment_spec_strategy_rollingupdate_max_unavailable': 'deployment.rollingupdate.max_unavailable',  # noqa: E501
                 'kube_deployment_status_replicas': 'deployment.replicas',
                 'kube_deployment_status_replicas_available': 'deployment.replicas_available',
                 'kube_deployment_status_replicas_unavailable': 'deployment.replicas_unavailable',
@@ -154,7 +154,7 @@ class KubernetesState(GenericPrometheusCheck):
                 'kube_replicaset_status_replicas': 'replicaset.replicas',
                 'kube_replicationcontroller_spec_replicas': 'replicationcontroller.replicas_desired',
                 'kube_replicationcontroller_status_available_replicas': 'replicationcontroller.replicas_available',
-                'kube_replicationcontroller_status_fully_labeled_replicas': 'replicationcontroller.fully_labeled_replicas',
+                'kube_replicationcontroller_status_fully_labeled_replicas': 'replicationcontroller.fully_labeled_replicas',  # noqa: E501
                 'kube_replicationcontroller_status_ready_replicas': 'replicationcontroller.replicas_ready',
                 'kube_replicationcontroller_status_replicas': 'replicationcontroller.replicas',
                 'kube_statefulset_replicas': 'statefulset.replicas_desired',
@@ -284,11 +284,13 @@ class KubernetesState(GenericPrometheusCheck):
         mapping = condition_map['mapping']
 
         if base_sc_name == 'kubernetes_state.pod.phase':
-            message = "{} is currently reporting {}".format(self._label_to_tag('pod', metric.label, scraper_config),
-                                                            self._label_to_tag('phase', metric.label, scraper_config))
+            pod = self._label_to_tag('pod', metric.label, scraper_config)
+            phase = self._label_to_tag('phase', metric.label, scraper_config)
+            message = "{} is currently reporting {}".format(pod, phase)
         else:
-            message = "{} is currently reporting {}".format(self._label_to_tag('node', metric.label, scraper_config),
-                                                            self._label_to_tag('condition', metric.label, scraper_config))
+            node = self._label_to_tag('node', metric.label, scraper_config)
+            condition = self._label_to_tag('condition', metric.label, scraper_config)
+            message = "{} is currently reporting {}".format(node, condition)
 
         if condition_map['service_check_name'] is None:
             self.log.debug("Unable to handle {} - unknown condition {}".format(service_check_name, label_value))
@@ -379,9 +381,10 @@ class KubernetesState(GenericPrometheusCheck):
         status_phase_counter = Counter()
 
         for metric in message.metric:
+            pod_tag = self._label_to_tag("pod", metric.label, scraper_config)
+            namespace_tag = self._label_to_tag("namespace", metric.label, scraper_config)
             self._condition_to_tag_check(metric, check_basename, self.pod_phase_to_status, scraper_config,
-                                         tags=[self._label_to_tag("pod", metric.label, scraper_config),
-                                               self._label_to_tag("namespace", metric.label, scraper_config)] + scraper_config['custom_tags'])
+                                         tags=[pod_tag, namespace_tag] + scraper_config['custom_tags'])
 
             # Counts aggregated cluster-wide to avoid no-data issues on pod churn,
             # pod granularity available in the service checks
@@ -437,7 +440,8 @@ class KubernetesState(GenericPrometheusCheck):
         curr_time = int(time.time())
         for metric in message.metric:
             on_schedule = int(metric.gauge.value) - curr_time
-            tags = [self._format_tag(label.name, label.value, scraper_config) for label in metric.label] + scraper_config['custom_tags']
+            tags = [self._format_tag(label.name, label.value, scraper_config) for label in metric.label]
+            tags += scraper_config['custom_tags']
             if on_schedule < 0:
                 message = "The service check scheduled at {} is {} seconds late".format(
                     time.strftime('%Y-%m-%d %H:%M:%S', time.gmtime(int(metric.gauge.value))), on_schedule
@@ -499,8 +503,9 @@ class KubernetesState(GenericPrometheusCheck):
         by_condition_counter = Counter()
 
         for metric in message.metric:
+            node_tag = self._label_to_tag("node", metric.label, scraper_config)
             self._condition_to_tag_check(metric, base_check_name, self.condition_to_status_positive, scraper_config,
-                                         tags=[self._label_to_tag("node", metric.label, scraper_config)] + scraper_config['custom_tags'])
+                                         tags=[node_tag] + scraper_config['custom_tags'])
 
             # Counts aggregated cluster-wide to avoid no-data issues on node churn,
             # node granularity available in the service checks
@@ -517,36 +522,41 @@ class KubernetesState(GenericPrometheusCheck):
         """ The ready status of a cluster node (legacy)"""
         service_check_name = scraper_config['NAMESPACE'] + '.node.ready'
         for metric in message.metric:
+            node_tag = self._label_to_tag("node", metric.label, scraper_config)
             self._condition_to_service_check(metric, service_check_name, self.condition_to_status_positive,
-                                             tags=[self._label_to_tag("node", metric.label, scraper_config)] + scraper_config['custom_tags'])
+                                             tags=[node_tag] + scraper_config['custom_tags'])
 
     def kube_node_status_out_of_disk(self, message, scraper_config):
         """ Whether the node is out of disk space (legacy)"""
         service_check_name = scraper_config['NAMESPACE'] + '.node.out_of_disk'
         for metric in message.metric:
+            node_tag = self._label_to_tag("node", metric.label, scraper_config)
             self._condition_to_service_check(metric, service_check_name, self.condition_to_status_negative,
-                                             tags=[self._label_to_tag("node", metric.label, scraper_config)] + scraper_config['custom_tags'])
+                                             tags=[node_tag] + scraper_config['custom_tags'])
 
     def kube_node_status_memory_pressure(self, message, scraper_config):
         """ Whether the node is in a memory pressure state (legacy)"""
         service_check_name = scraper_config['NAMESPACE'] + '.node.memory_pressure'
         for metric in message.metric:
+            node_tag = self._label_to_tag("node", metric.label, scraper_config)
             self._condition_to_service_check(metric, service_check_name, self.condition_to_status_negative,
-                                             tags=[self._label_to_tag("node", metric.label, scraper_config)] + scraper_config['custom_tags'])
+                                             tags=[node_tag] + scraper_config['custom_tags'])
 
     def kube_node_status_disk_pressure(self, message, scraper_config):
         """ Whether the node is in a disk pressure state (legacy)"""
         service_check_name = scraper_config['NAMESPACE'] + '.node.disk_pressure'
         for metric in message.metric:
+            node_tag = self._label_to_tag("node", metric.label, scraper_config)
             self._condition_to_service_check(metric, service_check_name, self.condition_to_status_negative,
-                                             tags=[self._label_to_tag("node", metric.label)] + scraper_config['custom_tags'])
+                                             tags=[node_tag] + scraper_config['custom_tags'])
 
     def kube_node_status_network_unavailable(self, message, scraper_config):
         """ Whether the node is in a network unavailable state (legacy)"""
         service_check_name = scraper_config['NAMESPACE'] + '.node.network_unavailable'
         for metric in message.metric:
+            node_tag = self._label_to_tag("node", metric.label, scraper_config)
             self._condition_to_service_check(metric, service_check_name, self.condition_to_status_negative,
-                                             tags=[self._label_to_tag("node", metric.label, scraper_config)] + scraper_config['custom_tags'])
+                                             tags=[node_tag] + scraper_config['custom_tags'])
 
     def kube_node_spec_unschedulable(self, message, scraper_config):
         """ Whether a node can schedule new pods. """
@@ -554,7 +564,8 @@ class KubernetesState(GenericPrometheusCheck):
         statuses = ('schedulable', 'unschedulable')
         if message.type < len(METRIC_TYPES):
             for metric in message.metric:
-                tags = [self._format_tag(label.name, label.value, scraper_config) for label in metric.label] + scraper_config['custom_tags']
+                tags = [self._format_tag(label.name, label.value, scraper_config) for label in metric.label]
+                tags += scraper_config['custom_tags']
                 status = statuses[int(getattr(metric, METRIC_TYPES[message.type]).value)]  # value can be 0 or 1
                 tags.append(self._format_tag('status', status, scraper_config))
                 self.gauge(metric_name, 1, tags)  # metric value is always one, value is on the tags
